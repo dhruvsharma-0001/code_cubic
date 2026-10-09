@@ -12,8 +12,9 @@ sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 try:
     sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
 os.makedirs("data", exist_ok=True)
 HUB_DB = os.path.abspath("data/demo_hub.db")

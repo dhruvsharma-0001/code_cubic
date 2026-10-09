@@ -74,8 +74,9 @@ def select_backend() -> str:
             res = httpx.get(f"{ollama_url}/api/tags", timeout=1.0)
             if res.status_code == 200:
                 return "ollama"
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
             
     return "none"
 
@@ -167,7 +168,8 @@ class OllamaCaller:
             import httpx
             res = httpx.get(f"{self.ollama_url}/api/tags", timeout=2.0)
             return res.status_code == 200
-        except Exception:
+        except Exception as e:
+            import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
             return False
 
     def generate(self, prompt: str, system: str, max_tokens: int = 256) -> str:

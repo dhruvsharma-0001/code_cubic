@@ -68,7 +68,8 @@ class OutboundSerializer:
                 d_list, s_list = EdgeEmbedder.get_instance().embed_document([mem.content])
                 dense_vec = d_list[0]
                 bm25_vec = s_list[0]
-            except Exception:
+            except Exception as e:
+                import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
                 dense_vec = [0.0] * 384
 
         sparse_dict: dict[str, Any] = {"indices": [], "values": []}

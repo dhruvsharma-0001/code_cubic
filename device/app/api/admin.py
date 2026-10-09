@@ -1,8 +1,9 @@
 """Admin endpoints — reset, seed, optimize."""
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException
 import logging
+from device.app.api.auth import get_api_key
 
-router = APIRouter(tags=["admin"])
+router = APIRouter(tags=["admin"], dependencies=[Depends(get_api_key)])
 logger = logging.getLogger(__name__)
 
 

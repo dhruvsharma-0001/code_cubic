@@ -25,7 +25,8 @@ class LinkState:
                 with open(self.state_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     return data.get("state", "offline")
-            except Exception:
+            except Exception as e:
+                import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
                 return "offline"
         return "offline"
 

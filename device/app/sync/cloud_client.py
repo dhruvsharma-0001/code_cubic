@@ -37,7 +37,8 @@ class CloudClient:
                 client = QdrantClient(url=self.qdrant_url, timeout=2.0)
                 client.get_collections()
                 self._qdrant_client = client
-            except Exception:
+            except Exception as e:
+                import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
                 # Fallback to local on-disk QdrantClient for air-gapped / local mock hub
                 self.local_hub_dir.mkdir(parents=True, exist_ok=True)
                 self._qdrant_client = QdrantClient(path=str(self.local_hub_dir))
@@ -71,8 +72,9 @@ class CloudClient:
                 resp = http.post(f"{self.hub_url}/devices/heartbeat", json=device_profile)
                 if resp.status_code == 200:
                     return resp.json()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
         # Default policy configuration if hub offline or local
         return {
             "status": "ok",
@@ -151,8 +153,9 @@ class CloudClient:
                 resp = http.get(f"{self.hub_url}/stats")
                 if resp.status_code == 200:
                     return resp.json()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
         return {
             "devices_online": 14,
             "total_devices": 16,

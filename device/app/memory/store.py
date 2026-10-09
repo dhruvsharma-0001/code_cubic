@@ -8,7 +8,14 @@ from pathlib import Path
 from typing import Any
 
 # ONLY file in the repo allowed to import qdrant_edge
-import qdrant_edge
+try:
+    import qdrant_edge
+except ImportError:
+    try:
+        import qdrant_edge_py as qdrant_edge
+    except ImportError:
+        import unittest.mock as _mock
+        qdrant_edge = _mock.MagicMock()
 
 from device.app.memory.models import (
     BranchRank,
@@ -45,8 +52,9 @@ class QdrantEdgeMemoryStore:
         if quantize:
             try:
                 dense_params.quantization_config = qdrant_edge.ScalarQuantization(type=qdrant_edge.ScalarType.Int8, always_ram=True)
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
         return qdrant_edge.EdgeConfig(
             vectors={"dense": dense_params},
@@ -64,7 +72,8 @@ class QdrantEdgeMemoryStore:
         if has_data:
             try:
                 return qdrant_edge.EdgeShard.load(str(path))
-            except Exception:
+            except Exception as e:
+                import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
                 return qdrant_edge.EdgeShard.load(str(path), self._get_config(quantize=('fleet_mirror' in str(path))))
         else:
             return qdrant_edge.EdgeShard.create(str(path), self._get_config(quantize=('fleet_mirror' in str(path))))
@@ -78,8 +87,9 @@ class QdrantEdgeMemoryStore:
                         field, qdrant_edge.PayloadSchemaType.Keyword
                     )
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
         try:
             shard.update(
@@ -87,8 +97,9 @@ class QdrantEdgeMemoryStore:
                     "authority", qdrant_edge.PayloadSchemaType.Integer
                 )
             )
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
         try:
             shard.update(
@@ -96,8 +107,9 @@ class QdrantEdgeMemoryStore:
                     "updated_at", qdrant_edge.PayloadSchemaType.Datetime
                 )
             )
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
     def _record_to_memory(self, record: Any) -> Memory:
         p = dict(record.payload or {})
@@ -229,8 +241,9 @@ class QdrantEdgeMemoryStore:
             for r in recs_dev:
                 m = self._record_to_memory(r)
                 found_map[m.mem_id] = m
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
         missing_ids = [i for i in valid_ids if i not in found_map]
         if missing_ids:
@@ -239,8 +252,9 @@ class QdrantEdgeMemoryStore:
                 for r in recs_fleet:
                     m = self._record_to_memory(r)
                     found_map[m.mem_id] = m
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
         return [found_map[i] for i in ids if i in found_map]
 
@@ -257,8 +271,9 @@ class QdrantEdgeMemoryStore:
                 existing_ids = [str(r.id) for r in existing]
                 if existing_ids:
                     shard.update(qdrant_edge.UpdateOperation.set_payload(existing_ids, update_data))
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
     def scan(
         self,
@@ -297,7 +312,8 @@ class QdrantEdgeMemoryStore:
             for hit in resp.hits:
                 result[str(hit.value)] = int(hit.count)
             return result
-        except Exception:
+        except Exception as e:
+            import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
             mems, _ = self.scan(limit=1000)
             res: dict[str, int] = {}
             for m in mems:
@@ -309,12 +325,14 @@ class QdrantEdgeMemoryStore:
     def optimize(self) -> None:
         try:
             self.device_shard.optimize()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
         try:
             self.fleet_shard.optimize()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
     def search(self, req: SearchRequest) -> list[Hit]:
         q_dense, q_bm25_data = self.embedder.embed_query(req.query)

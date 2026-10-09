@@ -21,7 +21,7 @@ export default function CloudPasswordGate({ onSuccess }: CloudPasswordGateProps)
     inputRef.current?.focus();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -32,7 +32,7 @@ export default function CloudPasswordGate({ onSuccess }: CloudPasswordGateProps)
     }
 
     setIsSubmitting(true);
-    const isValid = authenticateCloudConsole(password.trim());
+    const isValid = await authenticateCloudConsole(password.trim());
 
     if (isValid) {
       onSuccess();

@@ -566,6 +566,7 @@ export default function ConflictsPage() {
                       a.href = url;
                       a.download = `${conflict.id}_RBI_AUDIT_PROOF.json`;
                       a.click();
+                      URL.revokeObjectURL(url);
                     }}
                     className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
                   >

@@ -8,15 +8,19 @@ from pydantic import BaseModel, Field
 from hub.app.curator import FleetCurator
 from hub.app.state import HubState
 
+from hub.app.auth import get_api_key
+from fastapi import Depends
+
 app = FastAPI(
     title="EdgeMind - Fleet Central Control Plane",
     description="Central control plane and curator triage for reliability engineers",
     version="1.0.0",
+    dependencies=[Depends(get_api_key)]
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "https://edgemind-app.local"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -33,6 +33,8 @@ import {
   Activity,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useVoiceRecognition } from "@/hooks/useVoiceRecognition";
+import { useAudioVocalizer } from "@/hooks/useAudioVocalizer";
 
 export default function SearchPage() {
   const { deviceId, isOffline } = useApp();
@@ -48,58 +50,19 @@ export default function SearchPage() {
   const [engineMode, setEngineMode] = useState<"instant" | "slm">("instant");
 
   // Voice of the edge
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
-
-  // Soundbox Vocalizer states
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechLang, setSpeechLang] = useState<"en" | "hi">("en");
-
-  // Voice dictation setup
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const SpeechRecognition =
-        (window as any).SpeechRecognition ||
-        (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = speechLang === "hi" ? "hi-IN" : "en-IN";
-
-        recognition.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          setQuery(transcript);
-          setIsListening(false);
-          handleSearch(transcript);
-        };
-
-        recognition.onerror = () => {
-          setIsListening(false);
-        };
-
-        recognition.onend = () => {
-          setIsListening(false);
-        };
-
-        recognitionRef.current = recognition;
-      }
+  
+  const { isListening, toggleListening } = useVoiceRecognition({
+    lang: speechLang === "hi" ? "hi-IN" : "en-IN",
+    onResult: (transcript) => {
+      setQuery(transcript);
+      handleSearch(transcript);
     }
-  }, [speechLang]);
+  });
 
-  const toggleListening = () => {
-    if (!recognitionRef.current) {
-      alert("Web Speech API is not supported in this browser. Please use Google Chrome or Edge.");
-      return;
-    }
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } else {
-      setIsListening(true);
-      recognitionRef.current.start();
-    }
-  };
+  const { isSpeaking, handleSpeak } = useAudioVocalizer(speechLang);
+
+
 
   const handleSearch = useCallback(
     async (overrideQuery?: string, overrideEngine?: "instant" | "slm") => {

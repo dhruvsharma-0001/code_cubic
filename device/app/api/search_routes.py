@@ -2,10 +2,11 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from device.app.api.auth import get_api_key
 from device.app.api.search import SearchResponse, SearchService
 from device.app.api.router import SmartQueryRouter
 from device.app.api.slm import LocalSLMService
@@ -14,7 +15,7 @@ from device.app.ingest.pipeline import IngestPipeline
 from device.app.memory.models import Memory
 from device.app.memory.store import QdrantEdgeMemoryStore
 
-router = APIRouter(prefix="/api", tags=["search_and_memory"])
+router = APIRouter(prefix="/api", tags=["search_and_memory"], dependencies=[Depends(get_api_key)])
 
 # Configurable environment settings for multi-device support
 DEVICE_ID = os.environ.get("DEVICE_ID", "Device A")

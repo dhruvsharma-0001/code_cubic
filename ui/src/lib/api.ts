@@ -19,8 +19,16 @@ const BASE_URLS: Record<string, string> = {
 
 async function apiFetch<T>(deviceId: string, path: string, init?: RequestInit): Promise<T> {
   const base = BASE_URLS[deviceId] || BASE_URLS["device-a"];
+  const apiKey = typeof window !== "undefined" 
+    ? window.sessionStorage.getItem("edgemind_api_key") || "edgemind_secure_key_2026"
+    : "edgemind_secure_key_2026";
+    
   const res = await fetch(`${base}${path}`, {
     ...init,
+    headers: {
+      "X-EdgeMind-API-Key": apiKey,
+      ...init?.headers,
+    },
     signal: AbortSignal.timeout(4000),
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
@@ -323,8 +331,8 @@ export async function getMemories(deviceId: string): Promise<MemoryRecord[]> {
       title: m.payload?.title || m.content?.slice(0, 45) + "...",
     }));
   } catch (e) {
-    console.warn("Live getMemories fallback to mock:", e);
-    return MOCK_MEMORIES;
+    console.error("API Fetch Failed:", e);
+    throw e;
   }
 }
 
@@ -408,8 +416,8 @@ export async function captureMemory(deviceId: string, content: string, kind: str
       },
     };
   } catch (e) {
-    console.warn("Live captureMemory fallback to mock:", e);
-    return MOCK_CAPTURE_RESULTS[0];
+    console.error("API Fetch Failed:", e);
+    throw e;
   }
 }
 
@@ -450,8 +458,8 @@ export async function runSync(deviceId: string): Promise<SyncReport> {
   try {
     return await apiFetch<SyncReport>(deviceId, "/api/sync/trigger", { method: "POST" });
   } catch (e) {
-    console.warn("Live runSync fallback to mock:", e);
-    return MOCK_SYNC_REPORT;
+    console.error("API Fetch Failed:", e);
+    throw e;
   }
 }
 
@@ -487,8 +495,8 @@ export async function getOutbox(deviceId: string): Promise<OutboxEntry[]> {
       };
     });
   } catch (e) {
-    console.warn("Live getOutbox fallback to mock:", e);
-    return MOCK_OUTBOX;
+    console.error("API Fetch Failed:", e);
+    throw e;
   }
 }
 
@@ -556,8 +564,8 @@ export async function getConflicts(deviceId: string): Promise<ConflictRecord[]> 
       };
     });
   } catch (e) {
-    console.warn("Live getConflicts fallback to mock:", e);
-    return MOCK_CONFLICTS;
+    console.error("API Fetch Failed:", e);
+    throw e;
   }
 }
 
@@ -586,7 +594,8 @@ export async function getEvents(deviceId: string): Promise<ActivityEvent[]> {
       mem_id: r.payload?.mem_id,
     }));
   } catch (e) {
-    return MOCK_EVENTS;
+    console.error("API Fetch Failed:", e);
+    throw e;
   }
 }
 
@@ -693,7 +702,6 @@ export async function getResults(): Promise<ResultsData> {
   try {
     const res = await fetch("/eval/results.json");
     if (res.ok) return res.json();
-  } catch {}
-  return MOCK_RESULTS;
+  } catch (e) { throw e; }
 }
 

@@ -51,7 +51,8 @@ class EdgeEmbedder:
                 cache_dir=str(self.cache_dir),
                 local_files_only=True
             )
-        except Exception:
+        except Exception as e:
+            import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
             try:
                 return TextEmbedding(
                     model_name=self.dense_model_name,
@@ -71,7 +72,8 @@ class EdgeEmbedder:
                 cache_dir=str(self.cache_dir),
                 local_files_only=True
             )
-        except Exception:
+        except Exception as e:
+            import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
             try:
                 return SparseTextEmbedding(
                     model_name=self.sparse_model_name,

@@ -402,8 +402,9 @@ class SQLiteLedger:
                         from device.app.memory.models import Memory
                         mem = Memory(**payload)
                         store.upsert(mem)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
                 conn.execute("UPDATE outbox SET state = 'PENDING' WHERE op_id = ?", (op_id,))
                 reconciled += 1
         return reconciled

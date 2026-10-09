@@ -10,7 +10,8 @@ def health(request: Request):
     try:
         from sync import link
         online = link.is_online()
-    except Exception:
+    except Exception as e:
+        import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
         online = False
         
     memories_count = store.count() if hasattr(store, 'count') else 0

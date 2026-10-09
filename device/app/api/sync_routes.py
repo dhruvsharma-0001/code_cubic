@@ -1,9 +1,10 @@
 import os
 from pathlib import Path
 from typing import Any
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from device.app.api.auth import get_api_key
 from device.app.api.search_routes import _store, DATA_DIR, DEVICE_ID, SITE_ID, ASSET_ID
 from device.app.conflicts.engine import ConflictEngine
 from device.app.ledger.ledger import SQLiteLedger
@@ -15,7 +16,7 @@ from device.app.sync.link_state import LinkState
 from device.app.sync.pull_worker import PullWorker, SyncReport
 from device.app.sync.push_worker import PushWorker
 
-router = APIRouter(prefix="/api", tags=["sync_and_governance"])
+router = APIRouter(prefix="/api", tags=["sync_and_governance"], dependencies=[Depends(get_api_key)])
 
 # Singletons for device node configured to isolated directory
 _ledger = SQLiteLedger(db_path=DATA_DIR / "ledger.db")

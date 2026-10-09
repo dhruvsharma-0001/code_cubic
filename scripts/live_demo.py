@@ -18,8 +18,9 @@ import urllib.parse
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
 
 def banner(title: str, beat: str = ""):
     print("\n" + "=" * 75)
@@ -112,8 +113,9 @@ def main():
                             stats = parsed.get("stats", {})
                             print(f"\n  [✓] Stream Completed: {stats.get('total_tokens', stream_tokens)} tokens at {stats.get('tokens_per_sec', 54.5)} tok/s")
                             print(f"      Cloud Network Egress: {stats.get('egress_bytes', 0)} Bytes (Local CPU Inference)")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
     except Exception as e:
         print(f"\n  [!] Stream notice: {e}")
 

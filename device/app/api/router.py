@@ -172,8 +172,9 @@ class SmartQueryRouter:
                         for h in peer_raw_hits:
                             try:
                                 peer_hits.append(Hit.model_validate(h))
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                import logging
+                                logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
                         
                         raw_ans = peer_data.get("answer", {})
                         peer_answer = AnswerResult(
@@ -214,7 +215,8 @@ class SmartQueryRouter:
                             explain_mode=explain,
                             air_gapped=True,
                         )
-        except Exception:
+        except Exception as e:
+            import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
             # Peer offline or unreachable — gracefully degrade back to local or gap
             pass
 
