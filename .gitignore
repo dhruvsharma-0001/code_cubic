@@ -1,0 +1,96 @@
+# ============================
+# EdgeMind .gitignore
+# ============================
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+Thumbs.db
+.DS_Store
+pyrightconfig.json
+pyrefly.toml
+
+# AI Agent instruction files
+AGENTS.md
+ui/AGENTS.md
+ui/CLAUDE.md
+
+# Internal instance documentation & personal scratchpads
+EDGEMIND_AUDIT_REPORT.md
+EdgeMind_Judge_Review_and_Upgrade_Blueprint.md
+LLM_ARCHITECTURE_AND_INTEGRATION_GUIDE.*
+PITCH_GUIDE.md
+SRS.md
+is_worth_upgrade.md
+what_is_left_upgrade.md
+upgradesf.md
+roadmap_sprint_v2.md
+roadmap.md
+how_to_run.md
+ui/README.md
+!ROADMAP.md
+
+# Temporary / one-off patch scripts
+fix_*.py
+update_*.py
+
+# Local screenshot / scratch directory
+image/
+
+# Node / UI
+ui/node_modules/
+ui/.next/
+ui/out/
+ui/build/
+ui/.env.local
+node_modules/
+.next/
+
+# Runtime SQLite & Vector DB binary storage
+*.sqlite
+*.sqlite3
+*.db
+*.wal
+data/devices/
+data/hub_state.json
+data/models/
+data/generated/
+data/golden/
+data/eval/
+
+# Distribution & packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Environment files (keep .env.example)
+.env
+.env.local
+.env.production
+
+# Deployment guides
+push.md

@@ -1,0 +1,9 @@
+[project]
+name = "code-cubic"
+version = "2.0.0"
+description = "EdgeMind: Offline-First Industrial AI Memory & Smart P2P Routing"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["device/tests"]
+asyncio_mode = "auto"
