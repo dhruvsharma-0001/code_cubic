@@ -41,8 +41,8 @@ class AnswerComposer:
             citations.append({
                 "mem_id": hit.mem_id,
                 "snippet": best_sentence,
-                "authority": hit.authority,
-                "kind": hit.kind
+                "authority": getattr(mem, "authority", 0),
+                "kind": getattr(mem, "kind", "note"),
             })
             
         answer_text = " | ".join(best_sentences)
@@ -144,7 +144,7 @@ class SmartAnswerEngine:
             if matching_hit and matching_hit.mem_id in memories:
                 mem = memories[matching_hit.mem_id]
                 citations.append({
-                    "mem_id": mem.id,
+                    "mem_id": mem.mem_id,
                     "snippet": mem.content[:200], # just a preview
                     "authority": mem.authority,
                     "kind": mem.kind

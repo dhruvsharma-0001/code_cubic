@@ -155,10 +155,12 @@ class SmartQueryRouter:
 
         try:
             t_peer_start = time.perf_counter()
+            peer_api_key = os.environ.get("EDGEMIND_API_KEY", "edgemind_secure_key_2026")
             with httpx.Client(timeout=1.2) as client:
                 resp = client.get(
                     f"{self.peer_url}/api/search",
                     params={"q": query, "limit": limit, "explain": "false", "allow_peer": "false"},
+                    headers={"X-EdgeMind-API-Key": peer_api_key},
                 )
                 peer_rtt_ms = round((time.perf_counter() - t_peer_start) * 1000.0, 1)
                 if resp.status_code == 200:

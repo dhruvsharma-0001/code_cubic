@@ -83,6 +83,21 @@ class PolicyEngine:
                 reason=f"Raw payload size ({total_size / (1024*1024):.1f} MB) exceeds mesh transfer limit ({self.max_payload_bytes / (1024*1024):.1f} MB). Held locally awaiting direct wired dock sync.",
             )
 
+        # 3. Duplicate Hash Check (Preserve bandwidth)
+        if synced_hashes and mem.content_hash in synced_hashes:
+            factors = PolicyFactors(
+                has_pii=False,
+                size_bytes=total_size,
+                duplicate_factor=-1.0,
+                raw_score=0.0,
+            )
+            return Decision(
+                action="local_only",
+                score=0.0,
+                factors=factors,
+                reason="Near-duplicate content hash already synced to fleet mirror (saves satellite bandwidth).",
+            )
+
         # ---------------------------------------------------------
         # SOFT FACTORS (Weighted, explainable)
         # ---------------------------------------------------------
@@ -93,7 +108,7 @@ class PolicyEngine:
 
         base_score = 0.50
         reasons: list[str] = []
-
+        claims = mem.payload.get("claims", {})
 
         # H1: Qdrant-Powered Novelty & Deduplication
         # Instead of strict hash, check for vector distance using store
@@ -135,7 +150,6 @@ class PolicyEngine:
             base_score += factors.authority_factor
 
         # Soft factor 3: Novelty factor (+0.20 if specific technical claims exist)
-        claims = mem.payload.get("claims", {})
         if claims:
             factors.novelty_factor = 0.20
             base_score += factors.novelty_factor

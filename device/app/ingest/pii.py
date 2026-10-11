@@ -36,3 +36,12 @@ def redact(text: str) -> str:
     for pii_type, pattern in PII_PATTERNS.items():
         redacted_text = re.sub(pattern, f"[REDACTED_{pii_type.upper()}]", redacted_text)
     return redacted_text
+
+
+class PiiExtractor:
+    """Wrapper class for regex-based PII detection and redaction."""
+    def detect_pii(self, text: str) -> tuple[list[str], str, bool]:
+        flags = pii_flags(text)
+        redacted_text = redact(text)
+        is_pii = has_pii(text)
+        return flags, redacted_text, is_pii

@@ -81,7 +81,13 @@ class SearchService:
         # Step 2: Answer synthesis with SmartAnswerEngine
         t_comp_start = time.perf_counter()
         # Retrieve memories for these hits from the store for citation building
-        memories = {h.mem_id: self.store.get_memory(h.mem_id) for h in hits if self.store.get_memory(h.mem_id) is not None}
+        if hasattr(self.store, "get"):
+            mems = self.store.get([h.mem_id for h in hits])
+            memories = {m.mem_id: m for m in mems}
+        elif hasattr(self.store, "get_memory"):
+            memories = {h.mem_id: self.store.get_memory(h.mem_id) for h in hits if self.store.get_memory(h.mem_id) is not None}
+        else:
+            memories = {h.mem_id: h.memory for h in hits if getattr(h, "memory", None)}
         
         answer = self.composer.compose(
             query=query, 

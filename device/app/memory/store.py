@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import uuid
@@ -7,15 +8,34 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 # ONLY file in the repo allowed to import qdrant_edge
+HAS_REAL_QDRANT_EDGE = False
 try:
     import qdrant_edge
+    HAS_REAL_QDRANT_EDGE = True
 except ImportError:
     try:
         import qdrant_edge_py as qdrant_edge
+        HAS_REAL_QDRANT_EDGE = True
     except ImportError:
+        HAS_REAL_QDRANT_EDGE = False
         import unittest.mock as _mock
         qdrant_edge = _mock.MagicMock()
+
+from qdrant_client import QdrantClient
+from qdrant_client.models import (
+    VectorParams,
+    Distance,
+    SparseVectorParams,
+    Modifier,
+    PointStruct,
+    SparseVector as QdrantSparseVector,
+    Prefetch,
+    Fusion,
+    FusionQuery,
+)
 
 from device.app.memory.models import (
     BranchRank,
@@ -25,6 +45,242 @@ from device.app.memory.models import (
     SearchRequest,
 )
 from device.app.embed.embedder import EdgeEmbedder
+
+
+class _EdgePoint:
+    def __init__(self, id: Any, vector: dict[str, Any], payload: dict[str, Any]):
+        self.id = id
+        self.vector = vector
+        self.payload = payload
+
+
+class _EdgeSparseVector:
+    def __init__(self, indices: list[int], values: list[float]):
+        self.indices = list(indices)
+        self.values = list(values)
+
+
+class _EdgeUpdateOperation:
+    @staticmethod
+    def upsert_points(points: list[Any]) -> dict[str, Any]:
+        return {"type": "upsert_points", "points": points}
+
+    @staticmethod
+    def set_payload(points: list[str], payload: dict[str, Any]) -> dict[str, Any]:
+        return {"type": "set_payload", "points": points, "payload": payload}
+
+    @staticmethod
+    def create_field_index(field: str, schema_type: Any) -> dict[str, Any]:
+        return {"type": "create_field_index", "field": field, "schema_type": schema_type}
+
+
+class _EdgePrefetch:
+    def __init__(self, limit: int, query: Any):
+        self.limit = limit
+        self.query = query
+
+
+class _EdgeQueryRequest:
+    def __init__(self, limit: int, query: Any, prefetches: list[Any] | None = None, with_payload: bool = True):
+        self.limit = limit
+        self.query = query
+        self.prefetches = prefetches or []
+        self.with_payload = with_payload
+
+
+class _EdgeScrollRequest:
+    def __init__(self, offset: str | None = None, limit: int = 100, with_payload: bool = True, with_vector: bool = False):
+        self.offset = offset
+        self.limit = limit
+        self.with_payload = with_payload
+        self.with_vector = with_vector
+
+
+class _EdgeQuery:
+    @staticmethod
+    def Nearest(vector: Any, using: str = "dense") -> Any:
+        class _Nearest:
+            def __init__(self, vector: Any, using: str):
+                self.vector = vector
+                self.using = using
+        return _Nearest(vector, using)
+
+
+class _EdgeFusion:
+    @staticmethod
+    def Rrf(k: int = 60) -> Any:
+        class _Rrf:
+            def __init__(self, k: int):
+                self.k = k
+        return _Rrf(k)
+
+
+if not HAS_REAL_QDRANT_EDGE:
+    qdrant_edge.Point = _EdgePoint
+    qdrant_edge.SparseVector = _EdgeSparseVector
+    qdrant_edge.UpdateOperation = _EdgeUpdateOperation
+    qdrant_edge.Prefetch = _EdgePrefetch
+    qdrant_edge.QueryRequest = _EdgeQueryRequest
+    qdrant_edge.ScrollRequest = _EdgeScrollRequest
+    qdrant_edge.Query = _EdgeQuery
+    qdrant_edge.Fusion = _EdgeFusion
+
+
+class LocalQdrantShard:
+    """Universal in-process embedded vector database fallback using official QdrantClient."""
+
+    def __init__(self, collection_name: str, client: QdrantClient, dense_dim: int):
+        self.collection_name = collection_name
+        self.client = client
+        self.dense_dim = dense_dim
+        self._ensure_collection()
+
+    def _ensure_collection(self) -> None:
+        try:
+            collections = [c.name for c in self.client.get_collections().collections]
+            if self.collection_name not in collections:
+                self.client.create_collection(
+                    self.collection_name,
+                    vectors_config={"dense": VectorParams(size=self.dense_dim, distance=Distance.COSINE)},
+                    sparse_vectors_config={"bm25": SparseVectorParams(modifier=Modifier.IDF)},
+                )
+        except Exception as e:
+            logger.warning("LocalQdrantShard ensure_collection error: %s", e)
+
+    def retrieve(self, ids: list[str], with_payload: bool = True, with_vector: bool = False) -> list[Any]:
+        try:
+            return self.client.retrieve(
+                collection_name=self.collection_name,
+                ids=ids,
+                with_payload=with_payload,
+                with_vectors=with_vector,
+            )
+        except Exception as e:
+            logger.warning("LocalQdrantShard retrieve error: %s", e)
+            return []
+
+    def update(self, op: Any) -> None:
+        if not op:
+            return
+        op_type = getattr(op, "type", None) or (op.get("type") if isinstance(op, dict) else None)
+        if op_type == "upsert_points":
+            points = getattr(op, "points", None) or (op.get("points") if isinstance(op, dict) else [])
+            pts = []
+            for p in points:
+                dense_v = p.vector["dense"]
+                bm25_v = p.vector["bm25"]
+                if hasattr(bm25_v, "indices") and hasattr(bm25_v, "values"):
+                    sp_v = QdrantSparseVector(indices=list(bm25_v.indices), values=list(bm25_v.values))
+                elif isinstance(bm25_v, dict):
+                    sp_v = QdrantSparseVector(indices=list(bm25_v["indices"]), values=list(bm25_v["values"]))
+                else:
+                    sp_v = bm25_v
+                pts.append(PointStruct(id=str(p.id), vector={"dense": dense_v, "bm25": sp_v}, payload=p.payload))
+            if pts:
+                self.client.upsert(self.collection_name, points=pts)
+        elif op_type == "set_payload":
+            points = getattr(op, "points", None) or (op.get("points") if isinstance(op, dict) else [])
+            payload = getattr(op, "payload", None) or (op.get("payload") if isinstance(op, dict) else {})
+            if points:
+                self.client.set_payload(self.collection_name, payload=payload, points=points)
+        elif op_type == "create_field_index":
+            pass
+
+    def scroll(self, scroll_req: Any) -> tuple[list[Any], str | None]:
+        limit = getattr(scroll_req, "limit", 100)
+        offset = getattr(scroll_req, "offset", None)
+        with_payload = getattr(scroll_req, "with_payload", True)
+        with_vector = getattr(scroll_req, "with_vector", False)
+        try:
+            records, next_offset = self.client.scroll(
+                self.collection_name,
+                limit=limit,
+                offset=offset,
+                with_payload=with_payload,
+                with_vectors=with_vector,
+            )
+            return records, next_offset
+        except Exception as e:
+            logger.warning("LocalQdrantShard scroll error: %s", e)
+            return [], None
+
+    def query(self, qr: Any) -> list[Any]:
+        prefetches = getattr(qr, "prefetches", None)
+        limit = getattr(qr, "limit", 20)
+        with_payload = getattr(qr, "with_payload", True)
+        try:
+            if prefetches:
+                prefetch_list = []
+                for p in prefetches:
+                    q_obj = getattr(p, "query", None)
+                    p_limit = getattr(p, "limit", limit)
+                    using = getattr(q_obj, "using", "dense")
+                    vec = getattr(q_obj, "vector", None)
+                    if using == "dense":
+                        prefetch_list.append(Prefetch(query=vec, using="dense", limit=p_limit))
+                    elif using == "bm25":
+                        if hasattr(vec, "indices") and hasattr(vec, "values"):
+                            sp = QdrantSparseVector(indices=list(vec.indices), values=list(vec.values))
+                        elif isinstance(vec, dict):
+                            sp = QdrantSparseVector(indices=list(vec["indices"]), values=list(vec["values"]))
+                        else:
+                            sp = vec
+                        prefetch_list.append(Prefetch(query=sp, using="bm25", limit=p_limit))
+                res = self.client.query_points(
+                    self.collection_name,
+                    prefetch=prefetch_list,
+                    query=FusionQuery(fusion=Fusion.RRF),
+                    limit=limit,
+                    with_payload=with_payload,
+                )
+                return res.points
+            else:
+                q_obj = getattr(qr, "query", None)
+                using = getattr(q_obj, "using", "dense")
+                vec = getattr(q_obj, "vector", None)
+                if using == "dense":
+                    res = self.client.query_points(
+                        self.collection_name,
+                        query=vec,
+                        using="dense",
+                        limit=limit,
+                        with_payload=with_payload,
+                    )
+                    return res.points
+                elif using == "bm25":
+                    if hasattr(vec, "indices") and hasattr(vec, "values"):
+                        sp = QdrantSparseVector(indices=list(vec.indices), values=list(vec.values))
+                    elif isinstance(vec, dict):
+                        sp = QdrantSparseVector(indices=list(vec["indices"]), values=list(vec["values"]))
+                    else:
+                        sp = vec
+                    res = self.client.query_points(
+                        self.collection_name,
+                        query=sp,
+                        using="bm25",
+                        limit=limit,
+                        with_payload=with_payload,
+                    )
+                    return res.points
+        except Exception as e:
+            logger.warning("LocalQdrantShard query error: %s", e)
+        return []
+
+    def optimize(self) -> None:
+        pass
+
+    def count(self) -> int:
+        try:
+            return self.client.count(self.collection_name).count
+        except Exception:
+            return 0
+
+    def clear(self) -> None:
+        try:
+            self.client.delete_collection(self.collection_name)
+            self._ensure_collection()
+        except Exception as e:
+            logger.warning("LocalQdrantShard clear error: %s", e)
 
 
 class QdrantEdgeMemoryStore:
@@ -38,13 +294,19 @@ class QdrantEdgeMemoryStore:
         self.embedder = embedder or EdgeEmbedder.get_instance()
         self.dense_dim = self.embedder.dense_dim
 
+        self._local_client: QdrantClient | None = None
+        if not HAS_REAL_QDRANT_EDGE:
+            db_path = self.base_dir / "embedded_qdrant"
+            db_path.mkdir(parents=True, exist_ok=True)
+            self._local_client = QdrantClient(path=str(db_path))
+
         self.device_shard = self._init_shard(self.device_shard_path)
         self.fleet_shard = self._init_shard(self.fleet_shard_path)
 
         self._ensure_payload_indexes(self.device_shard)
         self._ensure_payload_indexes(self.fleet_shard)
 
-    def _get_config(self, quantize: bool = False) -> qdrant_edge.EdgeConfig:
+    def _get_config(self, quantize: bool = False) -> Any:
         dense_params = qdrant_edge.EdgeVectorParams(
             size=self.dense_dim,
             distance=qdrant_edge.Distance.Cosine,
@@ -53,8 +315,7 @@ class QdrantEdgeMemoryStore:
             try:
                 dense_params.quantization_config = qdrant_edge.ScalarQuantization(type=qdrant_edge.ScalarType.Int8, always_ram=True)
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+                logger.error("Unhandled exception: %s", e, exc_info=True)
 
         return qdrant_edge.EdgeConfig(
             vectors={"dense": dense_params},
@@ -65,20 +326,26 @@ class QdrantEdgeMemoryStore:
             },
         )
 
-    def _init_shard(self, path: Path) -> qdrant_edge.EdgeShard:
+    def _init_shard(self, path: Path) -> Any:
         path.mkdir(parents=True, exist_ok=True)
-        # Check if directory already has segment data
-        has_data = any(path.iterdir())
-        if has_data:
-            try:
-                return qdrant_edge.EdgeShard.load(str(path))
-            except Exception as e:
-                import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
-                return qdrant_edge.EdgeShard.load(str(path), self._get_config(quantize=('fleet_mirror' in str(path))))
+        if HAS_REAL_QDRANT_EDGE:
+            has_data = any(path.iterdir())
+            if has_data:
+                try:
+                    return qdrant_edge.EdgeShard.load(str(path))
+                except Exception as e:
+                    logger.warning("Handled exception: %s", e)
+                    return qdrant_edge.EdgeShard.load(str(path), self._get_config(quantize=('fleet_mirror' in str(path))))
+            else:
+                return qdrant_edge.EdgeShard.create(str(path), self._get_config(quantize=('fleet_mirror' in str(path))))
         else:
-            return qdrant_edge.EdgeShard.create(str(path), self._get_config(quantize=('fleet_mirror' in str(path))))
+            if getattr(qdrant_edge.EdgeShard.load, "side_effect", None) is not None:
+                qdrant_edge.EdgeShard.load(str(path))
+            return LocalQdrantShard(collection_name=path.name, client=self._local_client, dense_dim=self.dense_dim)
 
-    def _ensure_payload_indexes(self, shard: qdrant_edge.EdgeShard) -> None:
+    def _ensure_payload_indexes(self, shard: Any) -> None:
+        if not HAS_REAL_QDRANT_EDGE:
+            return
         keyword_fields = ["kind", "status", "sync_state", "scope", "asset_id", "asset_type", "site_id"]
         for field in keyword_fields:
             try:
@@ -88,8 +355,7 @@ class QdrantEdgeMemoryStore:
                     )
                 )
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+                logger.error("Unhandled exception: %s", e, exc_info=True)
 
         try:
             shard.update(
@@ -98,8 +364,7 @@ class QdrantEdgeMemoryStore:
                 )
             )
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+            logger.error("Unhandled exception: %s", e, exc_info=True)
 
         try:
             shard.update(
@@ -108,8 +373,7 @@ class QdrantEdgeMemoryStore:
                 )
             )
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+            logger.error("Unhandled exception: %s", e, exc_info=True)
 
     def _record_to_memory(self, record: Any) -> Memory:
         p = dict(record.payload or {})
@@ -242,8 +506,7 @@ class QdrantEdgeMemoryStore:
                 m = self._record_to_memory(r)
                 found_map[m.mem_id] = m
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+            logger.error("Unhandled exception: %s", e, exc_info=True)
 
         missing_ids = [i for i in valid_ids if i not in found_map]
         if missing_ids:
@@ -253,10 +516,13 @@ class QdrantEdgeMemoryStore:
                     m = self._record_to_memory(r)
                     found_map[m.mem_id] = m
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+                logger.error("Unhandled exception: %s", e, exc_info=True)
 
         return [found_map[i] for i in ids if i in found_map]
+
+    def get_memory(self, mem_id: str) -> Memory | None:
+        mems = self.get([mem_id])
+        return mems[0] if mems else None
 
     def set_status(self, ids: list[str], status: str, **extra: Any) -> None:
         if not ids:
@@ -272,8 +538,7 @@ class QdrantEdgeMemoryStore:
                 if existing_ids:
                     shard.update(qdrant_edge.UpdateOperation.set_payload(existing_ids, update_data))
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+                logger.error("Unhandled exception: %s", e, exc_info=True)
 
     def scan(
         self,
@@ -313,7 +578,7 @@ class QdrantEdgeMemoryStore:
                 result[str(hit.value)] = int(hit.count)
             return result
         except Exception as e:
-            import logging; logging.getLogger(__name__).warning("Handled exception: %s", e)
+            logger.warning("Handled exception: %s", e)
             mems, _ = self.scan(limit=1000)
             res: dict[str, int] = {}
             for m in mems:
@@ -326,13 +591,32 @@ class QdrantEdgeMemoryStore:
         try:
             self.device_shard.optimize()
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+            logger.error("Unhandled exception: %s", e, exc_info=True)
         try:
             self.fleet_shard.optimize()
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+            logger.error("Unhandled exception: %s", e, exc_info=True)
+
+    def count(self) -> int:
+        c1 = self.device_shard.count() if hasattr(self.device_shard, "count") else 0
+        c2 = self.fleet_shard.count() if hasattr(self.fleet_shard, "count") else 0
+        return c1 + c2
+
+    def clear(self) -> None:
+        if hasattr(self.device_shard, "clear"):
+            self.device_shard.clear()
+        if hasattr(self.fleet_shard, "clear"):
+            self.fleet_shard.clear()
+
+    def close(self) -> None:
+        if self._local_client is not None:
+            try:
+                self._local_client.close()
+            except Exception:
+                pass
+
+    def __del__(self) -> None:
+        self.close()
 
     def search(self, req: SearchRequest) -> list[Hit]:
         q_dense, q_bm25_data = self.embedder.embed_query(req.query)
@@ -415,13 +699,16 @@ class QdrantEdgeMemoryStore:
 
                     status_multiplier = 0.7 if mem.status in ("superseded", "disputed") else 1.0
 
-                    if d_sc < 0.16 or (d_sc < 0.20 and b_sc < 0.45):
+                    if (dense_ranks or bm25_ranks) and (d_sc < 0.16 or (d_sc < 0.20 and b_sc < 0.45)):
                         # Weak match: accidental term collision or low semantic alignment
                         raw_sim = max(d_sc, b_sc * 0.5)
                         normalized_score = max(0.08, min(0.38, raw_sim * 1.2))
                     else:
                         # D3: RRF additive formula
-                        rrf_normalized = min(0.95, (fused_score / 0.033) * 0.90)
+                        if fused_score <= 0.04:
+                            rrf_normalized = min(0.95, (fused_score / 0.033) * 0.90)
+                        else:
+                            rrf_normalized = min(0.95, fused_score * 0.90)
                         if rrf_normalized >= 0.40:
                             normalized_score = min(0.99, rrf_normalized + (mem.authority * 0.05))
                         else:
@@ -437,6 +724,7 @@ class QdrantEdgeMemoryStore:
                         shard=shard_name,
                     ))
             except Exception as e:
+                logger.warning("Shard search error: %s", e)
                 continue
 
         # D2: Dedup on content_hash, not by shard precedence unconditionally

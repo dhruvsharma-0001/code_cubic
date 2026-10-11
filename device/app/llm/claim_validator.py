@@ -34,27 +34,49 @@ class ClaimValidator:
         max_authority = 0
         
         for hit in hits:
-            # Safely handle Hit payload which might be dict or object based on actual models
-            payload = getattr(hit, 'payload', {}) or {}
-            
-            if "text" in payload:
-                source_texts.append(payload["text"])
-                source_claims.extend(self._extract_claims(payload["text"]))
-                
-            if "claims" in payload and isinstance(payload["claims"], list):
-                for c in payload["claims"]:
-                    if isinstance(c, dict) and 'value' in c and 'unit' in c:
-                        try:
-                            source_claims.append((float(c['value']), str(c['unit']).lower()))
-                        except ValueError:
-                            pass
-                            
-            hit_id = getattr(hit, 'id', None) or getattr(hit, 'memory_id', None)
-            if hit_id and hit_id in memories:
+            mem = getattr(hit, 'memory', None)
+            hit_id = getattr(hit, 'mem_id', None) or getattr(hit, 'id', None) or getattr(hit, 'memory_id', None)
+            if mem is None and hit_id and hit_id in memories:
                 mem = memories[hit_id]
+
+            if mem:
+                content = getattr(mem, 'content', '')
+                if content:
+                    source_texts.append(content)
+                    source_claims.extend(self._extract_claims(content))
+
+                payload = getattr(mem, 'payload', {}) or {}
                 auth = getattr(mem, 'authority', 0)
                 if auth > max_authority:
                     max_authority = auth
+
+                raw_claims = payload.get("claims", {})
+                if isinstance(raw_claims, list):
+                    for c in raw_claims:
+                        if isinstance(c, dict) and 'value' in c and 'unit' in c:
+                            try:
+                                source_claims.append((float(c['value']), str(c['unit']).lower()))
+                            except (ValueError, TypeError):
+                                pass
+                elif isinstance(raw_claims, dict):
+                    for _, c_val in raw_claims.items():
+                        if isinstance(c_val, dict) and 'unit' in c_val:
+                            unit = str(c_val['unit']).lower()
+                            vals = c_val.get('values', [c_val.get('value')])
+                            for v in vals:
+                                if v is not None:
+                                    try:
+                                        source_claims.append((float(v), unit))
+                                    except (ValueError, TypeError):
+                                        pass
+                        elif isinstance(c_val, (int, float, str)):
+                            source_claims.extend(self._extract_claims(str(c_val)))
+
+            # Fallback for hits with direct payload or text
+            fallback_payload = getattr(hit, 'payload', {}) or {}
+            if "text" in fallback_payload:
+                source_texts.append(fallback_payload["text"])
+                source_claims.extend(self._extract_claims(fallback_payload["text"]))
                     
         full_source_text = " ".join(source_texts)
         source_identifiers = self._extract_identifiers(full_source_text)

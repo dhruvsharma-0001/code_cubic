@@ -67,16 +67,16 @@ def select_backend() -> str:
         except ImportError:
             pass
             
-        # Check Ollama
-        try:
-            import httpx
-            ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
-            res = httpx.get(f"{ollama_url}/api/tags", timeout=1.0)
-            if res.status_code == 200:
-                return "ollama"
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error("Unhandled exception: %s", e, exc_info=True)
+        # Check Ollama (only if configured or explicitly requested to avoid airgap socket violation)
+        if os.getenv("OLLAMA_URL"):
+            try:
+                import httpx
+                ollama_url = os.getenv("OLLAMA_URL")
+                res = httpx.get(f"{ollama_url}/api/tags", timeout=1.0)
+                if res.status_code == 200:
+                    return "ollama"
+            except Exception:
+                pass
             
     return "none"
 
@@ -205,6 +205,17 @@ class LocalSLMService:
 
     def is_available(self) -> bool:
         return self._caller is not None and self._caller.is_available()
+
+    def ping(self) -> bool:
+        try:
+            import httpx
+            endpoint = os.getenv("LLM_ENDPOINT") or (
+                getattr(self._caller, "ollama_url", None) if self.backend_name == "ollama" else "http://localhost:11434"
+            )
+            res = httpx.get(f"{endpoint}/api/tags", timeout=1.0)
+            return res.status_code == 200
+        except Exception:
+            return False
 
     def call(self, query: str, hits: list[Hit]) -> tuple[str, list[str], float, str]:
         if not self.is_available():

@@ -10,11 +10,14 @@ Usage:
     python scripts/live_demo.py
 """
 
+import os
 import sys
 import json
 import time
 import urllib.request
 import urllib.parse
+
+API_KEY = os.environ.get("EDGEMIND_API_KEY", "edgemind_secure_key_2026")
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -31,13 +34,27 @@ def banner(title: str, beat: str = ""):
     print("=" * 75)
 
 def get_json(url: str):
-    req = urllib.request.Request(url, headers={"User-Agent": "EdgeMind-LiveDemo/1.0"})
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "EdgeMind-LiveDemo/1.0",
+            "X-EdgeMind-API-Key": API_KEY,
+        },
+    )
     with urllib.request.urlopen(req, timeout=5) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 def post_json(url: str, payload: dict):
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", "User-Agent": "EdgeMind-LiveDemo/1.0"})
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "EdgeMind-LiveDemo/1.0",
+            "X-EdgeMind-API-Key": API_KEY,
+        },
+    )
     with urllib.request.urlopen(req, timeout=5) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -96,7 +113,13 @@ def main():
     print("  Streaming output:   ", end="", flush=True)
 
     stream_tokens = 0
-    stream_req = urllib.request.Request(stream_url, headers={"User-Agent": "EdgeMind-LiveDemo/1.0"})
+    stream_req = urllib.request.Request(
+        stream_url,
+        headers={
+            "User-Agent": "EdgeMind-LiveDemo/1.0",
+            "X-EdgeMind-API-Key": API_KEY,
+        },
+    )
     try:
         with urllib.request.urlopen(stream_req, timeout=10) as s_resp:
             for line in s_resp:

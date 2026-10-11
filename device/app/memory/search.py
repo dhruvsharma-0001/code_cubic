@@ -1,14 +1,13 @@
 """device/app/memory/search.py — Hybrid search: dense + BM25 + RRF fusion."""
 
 import time
-from device.app.memory.models import SearchRequest, SearchResponse, Hit
-from device.app.memory.store import InMemoryStore
+from device.app.memory.models import SearchRequest, SearchResponse, Hit, MemoryStore
 from device.app.embed.dense import DenseEmbedder
 from device.app.embed.sparse import SparseEmbedder
 from device.app.memory.timing import TimingReport, timed
 
 class HybridSearcher:
-    def __init__(self, store: InMemoryStore, dense_embedder: DenseEmbedder, sparse_embedder: SparseEmbedder):
+    def __init__(self, store: MemoryStore, dense_embedder: DenseEmbedder, sparse_embedder: SparseEmbedder):
         self.store = store
         self.dense_embedder = dense_embedder
         self.sparse_embedder = sparse_embedder
@@ -89,14 +88,7 @@ class HybridSearcher:
             hit = Hit(
                 mem_id=mem_id,
                 score=score,
-                content_snippet=mem.content[:200] + ("..." if len(mem.content) > 200 else ""),
-                kind=mem.kind,
-                status=mem.status,
-                authority=mem.authority,
-                asset_id=mem.asset_id,
-                site_id=mem.site_id,
-                dense_rank=dense_ranks.get(mem_id),
-                bm25_rank=sparse_ranks.get(mem_id)
+                memory=mem,
             )
             hits.append(hit)
 
